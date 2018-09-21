@@ -1,8 +1,12 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Main (main) where
 
+import           GHC.Generics
 import           Control.DeepSeq
 import           Control.Exception (evaluate)
 import           Control.Monad
@@ -29,6 +33,18 @@ data Max = forall f. NFData (f Int) => Max String (Int -> IO (f Int)) (f Int -> 
 data Sort = forall f. NFData (f Int) => Sort String (Int -> IO (f Int)) (f Int -> f Int)
 data RemoveElement = forall f. NFData (f Int) => RemoveElement String (IO (f Int)) ((Int -> Bool) -> f Int -> f Int)
 data RemoveByIndex = forall f. NFData (f Int) => RemoveByIndex String (IO (f Int)) ((Int -> Int -> Bool) -> f Int -> f Int)
+
+newtype DList f a = DL { unDL :: f a -> f a } deriving (Generic, NFData)
+
+fromList :: Monoid (f a) => f a -> DList f a
+fromList = DL . (<>)
+toList :: Monoid (f a) => DList f a -> f a
+toList = ($ mempty) . unDL
+
+empty :: DList f a
+empty = DL id
+append :: DList f a -> DList f a -> DList f a
+append (DL x) (DL y) = DL (x . y)
 
 main :: IO ()
 main = do
@@ -60,10 +76,12 @@ main = do
         "Append"
         (appends
            [ Append "Data.List" sampleList (<>) force
+           , Append "DList []" sampleDList append id
            , Append "Data.Vector" sampleVector (<>) id
            , Append "Data.Vector.Unboxed" sampleUVVector (<>) id
            , Append "Data.Vector.Storable" sampleSVVector (<>) id
            , Append "Data.Sequence" sampleSeq (<>) id
+           , Append "DList Sequence" sampleDSeq append id
            ])
     , bgroup
         "Length"
@@ -248,6 +266,12 @@ randomSampleSVVector i = evaluate $ force $ SV.fromList (take i (randoms (mkStdG
 randomSampleSeq :: Int -> IO (S.Seq Int)
 randomSampleSeq i = evaluate $ force $ S.fromList (take i (randoms (mkStdGen 0) :: [Int]))
 
+randomSampleDList :: Int -> IO (DList [] Int)
+randomSampleDList i = evaluate $ force $ fromList (take i (randoms (mkStdGen 0) :: [Int]))
+
+randomSampleDSeq :: Int -> IO (DList S.Seq Int)
+randomSampleDSeq i = evaluate $ force $ fromList $ S.fromList (take i (randoms (mkStdGen 0) :: [Int]))
+
 sampleList :: Int -> IO [Int]
 sampleList i = evaluate $ force [1..i]
 
@@ -262,3 +286,9 @@ sampleSVVector i = evaluate $ force $ SV.fromList [1..i]
 
 sampleSeq :: Int -> IO (S.Seq Int)
 sampleSeq i = evaluate $ force $ S.fromList [1..i]
+
+sampleDList :: Int -> IO (DList [] Int)
+sampleDList i = evaluate $ force $ fromList [1..i]
+
+sampleDSeq :: Int -> IO (DList S.Seq Int)
+sampleDSeq i = evaluate $ force $ fromList $ S.fromList [1..i]
